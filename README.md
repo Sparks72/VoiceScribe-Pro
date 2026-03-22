@@ -10,7 +10,7 @@ A browser-based voice transcription tool with AI-powered Polish, Translate, and 
 
 - **Three transcription engines** — Web Speech (free, no key), OpenAI Realtime Whisper, and Groq Whisper (chunk-based, near real-time)
 - **AI Polish** — fixes punctuation, capitalisation, and paragraph structure using GPT-4o or Groq llama-3.3-70b
-- **AI Translate** — translates to 13 languages via DeepL, Groq, or OpenAI (DeepL requires HTTPS hosting)
+- **AI Translate** — translates to 13 languages via Groq or OpenAI. Claude translation available when hosted on HTTPS.
 - **AI Summarize** — extracts key points and action items into a separate panel
 - **Export** — Copy, TXT, SRT subtitles, and DOCX Word document (built in-browser, no server needed)
 - **Dictation History** — last 30 sessions saved to localStorage, one-click restore
@@ -39,10 +39,9 @@ All keys are stored in your browser's `localStorage` only — they never leave y
 |---|---|---|
 | **OpenAI** | Realtime Whisper, Polish, Translate | [platform.openai.com](https://platform.openai.com) |
 | **Groq** | Whisper transcription, Polish, Translate | [console.groq.com](https://console.groq.com) |
-| **DeepL** | High-quality translation | [deepl.com/pro#developer](https://www.deepl.com/pro#developer) |
-| **Anthropic** | Claude translation (future) | [console.anthropic.com](https://console.anthropic.com) |
+| **Anthropic** | Claude translation (requires HTTPS) | [console.anthropic.com](https://console.anthropic.com) |
 
-> **Note:** DeepL and Anthropic API calls require HTTPS hosting due to browser CORS policy. They will not work when opening the file directly from your local drive. Host on GitHub Pages (see below) to enable them.
+> **Note:** DeepL does not allow browser-based API calls under any circumstances — this is a deliberate policy on their part. Anthropic/Claude translation requires HTTPS hosting (e.g. GitHub Pages) due to browser CORS policy.
 
 ---
 
