@@ -389,9 +389,10 @@ kbd{border:1px solid var(--bdr2);border-radius:3px;padding:1px 5px;font-size:9px
     <button class="sec-btn emoji-btn" id="emojiBtn" onclick="doPolish(true)" title="Polish and add relevant emojis">✦ POLISH + 😊</button>
     <button class="sec-btn xlate-btn" id="xlateBtn" onclick="doTranslate()" title="Translate to selected language">⇄ TRANSLATE</button>
     <select id="xlate-provider" title="Translation engine" style="background:var(--bg2);border:1px solid var(--bdr);color:var(--txt2);font-family:var(--mono);font-size:10px;padding:6px 8px;border-radius:5px;cursor:pointer;outline:none">
+      <option value="deepl">DeepL ★</option>
+      <option value="anthropic">Claude Sonnet 4.6</option>
       <option value="groq">Groq</option>
       <option value="openai">OpenAI</option>
-      <option value="anthropic">Claude (server only)</option>
     </select>
     <select id="xlate-lang" title="Target language" style="background:var(--bg2);border:1px solid var(--bdr);color:var(--txt2);font-family:var(--mono);font-size:10px;padding:6px 8px;border-radius:5px;cursor:pointer;outline:none">
       <option value="DE|German">→ DE</option>
@@ -1174,7 +1175,7 @@ function loadKeys() {
     var a = G('key-' + p); if (a) a.value = v;
     var b = G('mk-' + p);  if (b) b.value = v;
   });
-  var xp = localStorage.getItem('vs_xlate_provider') || 'groq';
+  var xp = localStorage.getItem('vs_xlate_provider') || 'deepl';
   var xpEl = G('xlate-provider'); if (xpEl) xpEl.value = xp;
   var xl = localStorage.getItem('vs_xlate_lang') || 'DE|German';
   var xlEl = G('xlate-lang'); if (xlEl) xlEl.value = xl;
@@ -1377,11 +1378,6 @@ async function doTranslate() {
   var xlProviderEl = G('xlate-provider');
   var xlProvider = xlProviderEl ? xlProviderEl.value : 'groq';
 
-  if (xlProvider === 'anthropic') {
-    showT('Claude cannot be called from a local file — choose Groq or OpenAI', 'err');
-    return;
-  }
-
   var key = getKey(xlProvider);
   if (!key) { showT('No ' + xlProvider + ' key — open Settings ⚙', 'err'); openModal(); return; }
 
@@ -1423,42 +1419,50 @@ async function doTranslate() {
 }
 
 async function translateDeepL(key, text, targetLang) {
-  // Free keys end in :fx — detect and route directly, no wasted request
-  var isFree = key.trim().endsWith(':fx');
-  var endpoint = isFree
-    ? 'https://api-free.deepl.com/v2/translate'
-    : 'https://api.deepl.com/v2/translate';
-  var r = await fetch(endpoint, {
+  // If running via local proxy, route through it (avoids CORS)
+  var viaProxy = (location.hostname === 'localhost' || location.hostname === '127.0.0.1');
+  if (viaProxy) {
+    var r = await fetch('/proxy/deepl', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: key, text: [text], target_lang: targetLang })
+    });
+    if (!r.ok) { var e = await r.json().catch(function(){ return {}; }); throw new Error(e.message || 'DeepL HTTP ' + r.status); }
+    var d = await r.json();
+    return d.translations && d.translations[0] && d.translations[0].text;
+  }
+  // Direct call (GitHub Pages etc — will be blocked by DeepL CORS)
+  var isFree   = key.trim().endsWith(':fx');
+  var endpoint = isFree ? 'https://api-free.deepl.com/v2/translate' : 'https://api.deepl.com/v2/translate';
+  var r2 = await fetch(endpoint, {
     method: 'POST',
     headers: { 'Authorization': 'DeepL-Auth-Key ' + key, 'Content-Type': 'application/json' },
     body: JSON.stringify({ text: [text], target_lang: targetLang })
   });
-  if (!r.ok) {
-    var e = await r.json().catch(function(){ return {}; });
-    throw new Error(e.message || 'DeepL HTTP ' + r.status);
-  }
-  var d = await r.json();
-  return d.translations && d.translations[0] && d.translations[0].text;
+  if (!r2.ok) { var e2 = await r2.json().catch(function(){ return {}; }); throw new Error(e2.message || 'DeepL HTTP ' + r2.status); }
+  var d2 = await r2.json();
+  return d2.translations && d2.translations[0] && d2.translations[0].text;
 }
 
 async function translateAnthropic(key, prompt) {
-  var r = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'x-api-key': key,
-      'anthropic-version': '2023-06-01',
-      'content-type': 'application/json',
-      'anthropic-dangerous-allow-cors': 'true'
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 4096,
-      messages: [{ role: 'user', content: prompt }]
-    })
-  });
+  var viaProxy = (location.hostname === 'localhost' || location.hostname === '127.0.0.1');
+  var payload  = { model: 'claude-sonnet-4-6', max_tokens: 4096, messages: [{ role: 'user', content: prompt }] };
+  var r;
+  if (viaProxy) {
+    r = await fetch('/proxy/anthropic', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: key, payload: payload })
+    });
+  } else {
+    r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json', 'anthropic-dangerous-allow-cors': 'true' },
+      body: JSON.stringify(payload)
+    });
+  }
   if (!r.ok) { var e = await r.json().catch(function(){ return {}; }); throw new Error(e.error ? e.error.message : 'HTTP ' + r.status); }
   var d = await r.json();
-  // Track cost — Sonnet 4.6: $3/$15 per M tokens in/out
   if (d.usage) addLLMCost(d.usage, 'claude-sonnet-4-6');
   return d.content && d.content[0] && d.content[0].text;
 }
